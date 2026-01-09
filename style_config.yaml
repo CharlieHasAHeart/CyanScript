@@ -1,0 +1,24 @@
+resources:
+  font_path_simhei: "./assets/SimHei.ttf"
+  font_path_arial: "./assets/Arial.ttf"
+
+theme:
+  primary: "1E5AA8"
+  accent: "2A7FCF"
+  text: "333333"
+  border: "1E5AA8"
+
+typography:
+  fonts:
+    cn: "Microsoft YaHei"
+    en: "Arial"
+  sizes_pt:
+    h1: 16
+    h2: 14
+    h3: 12
+    body: 10.5
+    header: 9
+  line_height: 1.5
+  indent_chars: 2
+  margin_cm: 2.5
+  h1_border: true

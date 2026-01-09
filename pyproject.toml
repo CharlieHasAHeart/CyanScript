@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cyanscript"
+version = "0.1.0"
+description = "CyanScript document generator"
+readme = "TDD.md"
+requires-python = ">=3.8"
+dependencies = [
+  "docxtpl",
+  "python-docx",
+  "markdown",
+  "beautifulsoup4",
+]
+
+[project.scripts]
+cyanscript = "cyan_script:main"
+
+[tool.setuptools]
+py-modules = ["cyan_script"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"*" = ["assets/reference.docx"]
