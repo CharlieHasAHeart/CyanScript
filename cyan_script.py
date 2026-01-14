@@ -340,6 +340,24 @@ def safe_filename(value: str) -> str:
     return cleaned or "output"
 
 
+def load_dotenv(dotenv_path: str) -> None:
+    if not os.path.exists(dotenv_path):
+        return
+    try:
+        with open(dotenv_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
+    except OSError:
+        print(f"[WARN] failed to read .env: {dotenv_path}")
+
+
 def resolve_template_path() -> str:
     env_path = os.getenv("CYANSCRIPT_TEMPLATE")
     candidates = []
@@ -369,6 +387,8 @@ def main() -> None:
             os.makedirs(work_dir, exist_ok=True)
         os.chdir(work_dir)
 
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    load_dotenv(os.path.join(script_dir, ".env"))
     template_path = resolve_template_path()
 
     software_name = prompt_input("软件名称: ")
