@@ -3,7 +3,6 @@ import os
 import re
 import sys
 import warnings
-from typing import Optional
 
 warnings.filterwarnings(
     "ignore",
@@ -26,6 +25,43 @@ _HEADING_NUM_PATTERNS = [
     r"^\s*\d+\s*[、\.\)]\s*",
 ]
 
+_STYLE_ALIASES = {
+    "heading 1": ["heading 1", "Heading 1", "标题 1"],
+    "heading 2": ["heading 2", "Heading 2", "标题 2"],
+    "heading 3": ["heading 3", "Heading 3", "标题 3"],
+    "heading 4": ["heading 4", "Heading 4", "标题 4"],
+    "heading 5": ["heading 5", "Heading 5", "标题 5"],
+    "heading 6": ["heading 6", "Heading 6", "标题 6"],
+    "heading 7": ["heading 7", "Heading 7", "标题 7"],
+    "heading 8": ["heading 8", "Heading 8", "标题 8"],
+    "heading 9": ["heading 9", "Heading 9", "标题 9"],
+    "Normal": ["Normal", "正文"],
+    "Title": ["Title", "标题"],
+    "Subtitle": ["Subtitle", "副标题"],
+    "Quote": ["Quote", "引用"],
+    "引用块": ["引用块", "Quote", "Intense Quote"],
+    "提示块": ["提示块", "引用块", "Quote"],
+    "注意块": ["注意块", "引用块", "Quote"],
+    "警告块": ["警告块", "引用块", "Intense Quote"],
+    "Intense Quote": ["Intense Quote", "明显引用"],
+    "Intense Emphasis": ["Intense Emphasis", "强调"],
+    "List Paragraph": ["List Paragraph", "列表段落"],
+    "No List": ["No List", "无列表"],
+    "列表-无序": ["列表-无序", "List Paragraph", "List"],
+    "列表-有序": ["列表-有序", "List Paragraph", "List"],
+    "Default Paragraph Font": ["Default Paragraph Font", "默认段落字体"],
+    "Table Grid": ["Table Grid", "表格网格"],
+    "Normal Table": ["Normal Table", "普通表格"],
+    "header": ["header", "页眉"],
+    "footer": ["footer", "页脚"],
+    "page number": ["page number", "页码"],
+    "toc 1": ["toc 1", "目录 1"],
+    "toc 2": ["toc 2", "目录 2"],
+    "toc 3": ["toc 3", "目录 3"],
+    "toc 4": ["toc 4", "目录 4"],
+    "Caption": ["Caption", "题注", "图注"],
+}
+
 
 def strip_heading_number(text: str) -> str:
     if not text:
@@ -36,6 +72,27 @@ def strip_heading_number(text: str) -> str:
         if s_new != s:
             s = s_new
     return s
+
+
+def _iter_style_candidates(style_names: list[str]) -> list[str]:
+    candidates = []
+    seen = set()
+    for name in style_names:
+        for alias in _STYLE_ALIASES.get(name, [name]):
+            if alias not in seen:
+                candidates.append(alias)
+                seen.add(alias)
+    return candidates
+
+
+def apply_style(obj, style_names: list[str]) -> bool:
+    for name in _iter_style_candidates(style_names):
+        try:
+            obj.style = name
+            return True
+        except KeyError:
+            continue
+    return False
 
 
 def update_fields_on_open(doc) -> None:
@@ -56,7 +113,11 @@ def resolve_img_path(md_path: str, src: str) -> str:
 
 def add_centered_image(subdoc, img_path: str, width_cm: float) -> None:
     p = subdoc.add_paragraph()
-    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    try:
+        p.style = "图片"
+    except KeyError:
+        p.style = "Normal"
+    p.paragraph_format.keep_with_next = True
     run = p.add_run()
     run.add_picture(img_path, width=Cm(width_cm))
 
@@ -65,30 +126,18 @@ def add_caption(subdoc, text: str) -> None:
     if not text:
         return
     p = subdoc.add_paragraph(text)
-    try:
-        p.style = "图注"
-    except KeyError:
-        try:
-            p.style = "Caption"
-        except KeyError:
-            p.style = "Normal"
-    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    if not apply_style(p, ["图注", "Caption", "Normal"]):
+        p.style = "Normal"
+    fmt = p.paragraph_format
+    fmt.keep_together = True
 
 
 def add_heading(subdoc, text: str, style_name: str) -> None:
     if not text:
         return
     p = subdoc.add_paragraph(text)
-    try:
-        p.style = style_name
-    except KeyError:
-        fallback_map = {
-            "标题 1": "Heading 1",
-            "标题 2": "Heading 2",
-            "标题 3": "Heading 3",
-            "标题 4": "Heading 4",
-        }
-        p.style = fallback_map.get(style_name, "Heading 1")
+    if not apply_style(p, [style_name, "heading 1"]):
+        p.style = "Heading 1"
     fmt = p.paragraph_format
     fmt.left_indent = None
     fmt.first_line_indent = None
@@ -99,20 +148,13 @@ def add_paragraph(subdoc, text: str, style_name: str) -> None:
     if not text:
         return
     p = subdoc.add_paragraph(text)
-    try:
-        p.style = style_name
-    except KeyError:
-        fallback_map = {
-            "正文": "Normal",
-        }
-        p.style = fallback_map.get(style_name, "Normal")
+    if not apply_style(p, [style_name, "Normal"]):
+        p.style = "Normal"
 
 
 def add_paragraph_with_inline_code(subdoc, p_node, style_name: str) -> None:
     p = subdoc.add_paragraph()
-    try:
-        p.style = style_name
-    except KeyError:
+    if not apply_style(p, [style_name, "Normal"]):
         p.style = "Normal"
 
     children = list(p_node.children)
@@ -135,10 +177,7 @@ def add_paragraph_with_inline_code(subdoc, p_node, style_name: str) -> None:
             code_text = child.get_text()
             if code_text:
                 run = p.add_run(code_text.replace(" ", "\u00A0"))
-                try:
-                    run.style = "行内代码"
-                except KeyError:
-                    pass
+                apply_style(run, ["行内代码", "Inline Code"])
             if idx + 1 < len(children) and isinstance(children[idx + 1], NavigableString):
                 pending_thinspace = True
         else:
@@ -150,6 +189,18 @@ def add_paragraph_with_inline_code(subdoc, p_node, style_name: str) -> None:
                 pending_thinspace = False
             if text:
                 p.add_run(text)
+
+
+def add_list(subdoc, list_node, ordered: bool) -> None:
+    style_name = "列表-有序" if ordered else "列表-无序"
+    for li in list_node.find_all("li", recursive=False):
+        li_copy = BeautifulSoup(li.encode_contents(), "html.parser")
+        for nested in li_copy.find_all(["ul", "ol"]):
+            nested.decompose()
+        if li_copy.get_text(strip=True) or li_copy.find("code"):
+            add_paragraph_with_inline_code(subdoc, li_copy, style_name)
+        for nested in li.find_all(["ul", "ol"], recursive=False):
+            add_list(subdoc, nested, ordered=nested.name == "ol")
 
 
 
@@ -188,17 +239,13 @@ def add_code_block(subdoc, pre_node) -> None:
 
     if lang:
         p_lang = subdoc.add_paragraph(f"语言：{format_language(lang)}")
-        try:
-            p_lang.style = "代码语言标记"
-        except KeyError:
-            p_lang.style = "代码块"
+        if not apply_style(p_lang, ["代码语言标记", "代码块"]):
+            p_lang.style = "Normal"
 
     for line in code_text.split("\n"):
         p = subdoc.add_paragraph(line)
-        try:
-            p.style = "代码块"
-        except KeyError:
-            p.style = "正文"
+        if not apply_style(p, ["代码块", "Normal"]):
+            p.style = "Normal"
 
 
 def add_table(subdoc, table_node) -> None:
@@ -228,9 +275,7 @@ def add_table(subdoc, table_node) -> None:
         return
 
     table = subdoc.add_table(rows=len(rows), cols=max_cols)
-    try:
-        table.style = "Table Grid"
-    except KeyError:
+    if not apply_style(table, ["CyanScript Table", "Normal Table", "Table Grid"]):
         table.style = "Normal Table"
 
     for r_idx, (row_kind, cells) in enumerate(rows):
@@ -239,12 +284,11 @@ def add_table(subdoc, table_node) -> None:
             cell = row.cells[c_idx]
             text = cells[c_idx] if c_idx < len(cells) else ""
             cell.text = text
-            style_name = "表格表头" if row_kind == "header" else "表格正文"
+            style_candidates = (
+                ["表格-表头", "表格表头"] if row_kind == "header" else ["表格-正文", "表格正文"]
+            )
             for paragraph in cell.paragraphs:
-                try:
-                    paragraph.style = style_name
-                except KeyError:
-                    pass
+                apply_style(paragraph, style_candidates)
 
 
 
@@ -278,7 +322,7 @@ def render_markdown_to_subdoc(subdoc, md_path: str) -> None:
             add_centered_image(subdoc, img_path, 15)
             add_caption(subdoc, caption_text)
         else:
-            add_paragraph(subdoc, f"[图片缺失: {src}]", "正文")
+            add_paragraph(subdoc, f"[图片缺失: {src}]", "Normal")
             add_caption(subdoc, caption_text)
 
     for node in body.children:
@@ -286,41 +330,53 @@ def render_markdown_to_subdoc(subdoc, md_path: str) -> None:
             continue
 
         if node.name == "h1":
-            add_heading(subdoc, strip_heading_number(node.get_text(strip=True)), "标题 1")
+            add_heading(subdoc, strip_heading_number(node.get_text(strip=True)), "heading 1")
         elif node.name == "h2":
-            add_heading(subdoc, strip_heading_number(node.get_text(strip=True)), "标题 2")
+            add_heading(subdoc, strip_heading_number(node.get_text(strip=True)), "heading 2")
         elif node.name == "h3":
-            add_heading(subdoc, strip_heading_number(node.get_text(strip=True)), "标题 3")
+            add_heading(subdoc, strip_heading_number(node.get_text(strip=True)), "heading 3")
         elif node.name == "h4":
-            add_heading(subdoc, strip_heading_number(node.get_text(strip=True)), "标题 4")
+            add_heading(subdoc, strip_heading_number(node.get_text(strip=True)), "heading 4")
         elif node.name == "p":
             text = node.get_text(strip=True)
             if text:
                 if re.match(r"^表\s*\d+\s+.+", text):
                     pending_table_caption = text
                 else:
-                    add_paragraph_with_inline_code(subdoc, node, "正文")
+                    add_paragraph_with_inline_code(subdoc, node, "Normal")
             for img in node.find_all("img"):
                 handle_image(img.get("src", ""), img.get("alt", "") or "")
             for link in node.find_all("a"):
                 href = link.get("href", "")
                 if href.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp")):
                     handle_image(href, link.get_text(strip=True))
+        elif node.name == "blockquote":
+            quote_text = node.get_text("\n", strip=True)
+            if quote_text:
+                for line in quote_text.split("\n"):
+                    stripped = line.strip()
+                    if stripped.startswith("提示:") or stripped.startswith("提示："):
+                        add_paragraph(subdoc, line, "提示块")
+                    elif stripped.startswith("注意:") or stripped.startswith("注意："):
+                        add_paragraph(subdoc, line, "注意块")
+                    elif stripped.startswith("警告:") or stripped.startswith("警告："):
+                        add_paragraph(subdoc, line, "警告块")
+                    else:
+                        add_paragraph(subdoc, line, "引用块")
         elif node.name == "img":
             handle_image(node.get("src", ""), node.get("alt", "") or "")
         elif node.name == "table":
             if pending_table_caption:
                 p = subdoc.add_paragraph(pending_table_caption)
-                try:
-                    p.style = "表注"
-                except KeyError:
-                    try:
-                        p.style = "Caption"
-                    except KeyError:
-                        print("[WARN] 表注样式未找到，已使用默认正文样式。")
+                if not apply_style(p, ["表注", "Caption", "Normal"]):
+                    print("[WARN] Table caption style not found; using Normal.")
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 pending_table_caption = ""
             add_table(subdoc, node)
+        elif node.name == "ul":
+            add_list(subdoc, node, ordered=False)
+        elif node.name == "ol":
+            add_list(subdoc, node, ordered=True)
         elif node.name == "pre":
             add_code_block(subdoc, node)
         elif node.name == "a":
@@ -328,7 +384,7 @@ def render_markdown_to_subdoc(subdoc, md_path: str) -> None:
             if href.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp")):
                 handle_image(href, node.get_text(strip=True))
             else:
-                add_paragraph(subdoc, node.get_text(strip=True), "正文")
+                add_paragraph(subdoc, node.get_text(strip=True), "Normal")
 
 
 def prompt_input(label: str) -> str:
@@ -355,32 +411,27 @@ def load_dotenv(dotenv_path: str) -> None:
                 if key and key not in os.environ:
                     os.environ[key] = value
     except OSError:
-        print(f"[WARN] failed to read .env: {dotenv_path}")
+        print(f"[WARN] Failed to read .env: {dotenv_path}")
 
 
 def resolve_template_path() -> str:
     env_path = os.getenv("CYANSCRIPT_TEMPLATE")
-    candidates = []
-    if env_path:
-        if os.path.isabs(env_path):
-            candidates.append(env_path)
-        else:
-            candidates.append(os.path.abspath(env_path))
-    candidates.append(os.path.join(os.getcwd(), "assets", "reference.docx"))
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    candidates.append(os.path.join(script_dir, "assets", "reference.docx"))
+    if not env_path:
+        print("[ERROR] CYANSCRIPT_TEMPLATE not set in .env")
+        sys.exit(1)
 
-    for path in candidates:
-        if os.path.exists(path):
-            return path
-    print("[ERROR] template not found. Tried:")
-    for path in candidates:
-        print(f" - {path}")
+    if not os.path.isabs(env_path):
+        env_path = os.path.abspath(env_path)
+
+    if os.path.exists(env_path):
+        return env_path
+
+    print(f"[ERROR] Template not found: {env_path}")
     sys.exit(1)
 
 
 def main() -> None:
-    work_dir = prompt_input("工作目录(可选，留空则当前目录): ")
+    work_dir = prompt_input("[INPUT] Working directory (optional, blank for current): ")
     if work_dir:
         work_dir = os.path.abspath(work_dir)
         if not os.path.isdir(work_dir):
@@ -389,11 +440,12 @@ def main() -> None:
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     load_dotenv(os.path.join(script_dir, ".env"))
+    load_dotenv(os.path.join(os.getcwd(), ".env"))
     template_path = resolve_template_path()
 
-    software_name = prompt_input("软件名称: ")
-    version = prompt_input("版本号: ")
-    md_path = prompt_input("MD 文件: ")
+    software_name = prompt_input("[INPUT] Software name: ")
+    version = prompt_input("[INPUT] Version: ")
+    md_path = prompt_input("[INPUT] Markdown file: ")
 
     tpl = DocxTemplate(template_path)
     subdoc = tpl.new_subdoc()
@@ -406,7 +458,6 @@ def main() -> None:
     }
 
     tpl.render(context)
-    update_fields_on_open(tpl.docx)
 
     base_name = f"{safe_filename(software_name)}_{safe_filename(version)}_软件说明书.docx"
     final_path = os.path.join(os.getcwd(), base_name)
